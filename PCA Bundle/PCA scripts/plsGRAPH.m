@@ -26,17 +26,16 @@ end
 
 %plot r2
 figure('Name','Coefficient of determination','Position',[10+Pix_SS(1,3)/15+50,50,(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,Pix_SS(1,4)/2.7]);
-hold on
 plot(r2(:,1),r2(:,2),'-','color','k');
 ylabel('R^{2} Training','color','k');
 set( gca, 'YGrid', 'on' ,'ycolor','k');
 if abs(sum(sum(YTest)))>0
-    yyaxis right
-    plot(r2(:,1),r2(:,3),'-','color','r');
-    ylabel('R^{2} Test','color','r');
-    set( gca, 'ycolor','r');
+    %yyaxis right
+    plot(r2(:,1),log(r2(:,2)-r2(:,3)),'-','color','k');
+    ylabel('log(R^{2} Training - Test)','color','k');
+    set( gca, 'ycolor','k');
 end
-xlabel('Observation');
+xlabel('Number of latent variables');
 set(gca,'FontName','Calibri','FontSize',14);
 if output.variables(1,6)==1
     set(gcf, 'Color', 'None');
@@ -76,12 +75,12 @@ if output.variables(1,6)==1
     set(gca, 'Color', 'None');
 end
 
-YX(1)=min(yfitPLS);
-YX(2)=max(yfitPLS);
+YX(1)=min(yfitPLS(:,1));
+YX(2)=max(yfitPLS(:,1));
 
 %plot of measured versus predicted
 figure('Name','Measured versus predicted','Position',[10+Pix_SS(1,3)/15+50+(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,50+Pix_SS(1,4)/2,Pix_SS(1,4)/2.7+100,Pix_SS(1,4)/2.7]);
-if abs(sum(sum(YTest)))>0
+if size(YTest,1)>0 %abs(sum(sum(YTest)))>0
     plot(YTraining(:,:),yfitPLS,'ko',YTest(:,:),TestfitPLS,'r^',YX(:),YX(:),'k:');
     text(YX(1),YX(2),strcat('R^{2} = ',num2str(round(r2(output.variables(2),2),2))),'FontSize',14);
     text(YX(1),0.8*YX(2),strcat('R^{2} = ',num2str(round(r2(output.variables(2),3),2))),'color','r','FontSize',14);
@@ -89,12 +88,15 @@ else
     plot(YTraining(:,:),yfitPLS,'ko',YX(:),YX(:),'k:');
     text(YX(1),YX(2),strcat('R^{2} = ',num2str(round(r2(output.variables(2),2),2))),'FontSize',14);
 end
-if output.variables(10)==1
-    xlabel('Measured log(fraction)');
-    ylabel('Predicted log(fraction)');
+if isfield(temp,'PLSlabel')==1
+    xlabel("Measured " + temp.PLSlabel);
+    ylabel("Predicted " + temp.PLSlabel);
+elseif output.variables(10)==1
+    xlabel('log(Measured)');
+    ylabel('log(Predicted)');
 else
-    xlabel('Measured fraction');
-    ylabel('Predicted fraction');
+    xlabel('Measured');
+    ylabel('Predicted');
 end
 set(gca,'FontName','Calibri','FontSize',16);
 pos=get(gcf,'Position');
@@ -105,4 +107,19 @@ if output.variables(1,6)==1
     set(gcf, 'Color', 'None');
     set(gca, 'Color', 'None');
 end
+
+%plot of U versus T to detect correlation outliers
+figure('Name','U versus T','Position',[10+Pix_SS(1,3)/15+50+(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3+Pix_SS(1,4)/2.7,50+Pix_SS(1,4)/2,Pix_SS(1,4)/2.7,Pix_SS(1,4)/2.7]);
+scatter(output.PLS.Scores(:,1),output.PLS.YScores(:,1),'.','k');
+xlabel('X scores LV1');
+ylabel('Y scores LV1');
+
+set(gca,'FontName','Calibri','FontSize',16);
+
+box off
+if output.variables(1,6)==1
+    set(gcf, 'Color', 'None');
+    set(gca, 'Color', 'None');
+end
+
 

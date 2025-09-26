@@ -1,20 +1,24 @@
 %% Script wizard for PCA
-% Requires training set with different samples in each row
-% Different measurements for each column
-% May also optionally contain a test set
-% Will draw 95% confidence ellipse around replicate measurements
-% Andrew Hook May 2019
-% output contains all PCA number outputs
-% output.trainingDATA row 1 = variable number, 2 = mean, 3 = std
-% Add data to ExtraData that wish to be added to PCA plot
+% Requires training set with different samples in each row Different
+% measurements for each column May also optionally contain a test set Will
+% draw 95% confidence ellipse around replicate measurements 
+% Andrew Hook May 2019 
+% Includes Random Forest Update
+% output contains all PCA number outputs output.trainingDATA row 1 =
+% variable number, 2 = mean, 3 = std Add data to ExtraData that wish to be
+% added to PCA plot
 close all
 
-addpath(strcat(pwd,'\PCA scripts'))
+addpath('PCA scripts')
 
 % Create global variables
 global training test output temp ExtraData SampleNames xVALUES Ytest Ytraining
-output.variables=[1,1,2,0,0,0,0,0,0,0,0];
-%[1-number of training replicates,2-X axis PC,3-Y axis PC,4-number of test replicates,5-toggle collective optimisation,6-toggle transparent BKG,7-toggle variance scaling,8-toggle SRM,9-toggle PCA/PLS,10-toggle log/log for PLS,11 orbi filter toggle]
+output.variables=[1,1,2,0,0,0,0,0,0,0,0,95];
+%[1-number of training replicates,2-X axis PC,3-Y axis PC,4-number of test
+%replicates,5-toggle collective optimisation,6-toggle transparent
+%BKG,7-toggle variance scaling,8-toggle SRM,9-toggle PCA/PLS,10-toggle
+%log/log for PLS,11 orbi filter toggle,12 confidence limit,13-16 position
+%of main fig]
 output.log=[];
 output.omit=[]; % option to turn off datasets from graphing. Dataset number added will cause dataset to not be plotted. If add number 2000 to omit will turn off legend.
 ExtraData=[];
@@ -37,100 +41,118 @@ if 1 == 0
 end
 %% Setup user interface
 function UISetup(box)
-global output
-if size(output.variables,2)<11 % Alter variables to ensure old datasets are still compatible
-    output.variables(1,11)=0;
+global output temp
+if size(output.variables,2)<12 % Alter variables to ensure old datasets are still compatible
+    output.variables(1,12)=95;
 end
 Pix_SS = get(0,'screensize'); %Get screen dimensions
-Height = 750;
-fig = uifigure('units','pixels','Position',[10,100,Pix_SS(1,3)/15+50,Height]);
+Height = floor(0.75*Pix_SS(4));
+Width = floor(0.05*Pix_SS(4));
+Elements = 27; %Increase to add more parts to Setup Box
+Step = floor(Height/Elements);
+fig = uifigure('units','pixels','Position',[0,Width,Pix_SS(1,3)/15+50,Height+6]);
+output.variables(13:16) = get(fig,'Position');
 boxHIDE = uicheckbox(fig,...
     'text','Square root mean',...
-    'position',[25,Height-285,Pix_SS(1,3)/15,25],...
+    'position',[25,Height-11*Step+6,Pix_SS(1,3)/15,Step-6],...
     'Value',output.variables(8),...
     'ValueChangedFcn',@(src,evt)scaleMS(evt));
 boxSCALING = uicheckbox(fig,...
     'text','Scale By STDev','Value',box,...
-    'position',[25,Height-305,Pix_SS(1,3)/15,25],...
+    'position',[25,Height-12*Step+6,Pix_SS(1,3)/15,Step-6],...
     'Value',output.variables(7),...
     'ValueChangedFcn',@(src,evt)scaleSTD(evt));
 boxTRANSPARENT = uicheckbox(fig,...
     'text','Transparent BKG','Value',box,...
-    'position',[25,Height-115,Pix_SS(1,3)/15,25],...
+    'position',[25,Height-4*Step+6,Pix_SS(1,3)/15,Step-6],...
     'Value',output.variables(6),...
     'ValueChangedFcn',@(src,evt)tBKG(evt));
 boxFILTER = uicheckbox(fig,...
     'text','Orbi-filter','Value',box,...
-    'position',[25,Height-495,Pix_SS(1,3)/15,25],...
+    'position',[25,Height-19*Step+6+0.1*Step,Pix_SS(1,3)/15,Step-6],...
     'Value',output.variables(11),...
     'ValueChangedFcn',@(src,evt)oFILTER(evt));
-btnPCA = uibutton(fig,'Text','Run PCA','Position',[25,Height-30,Pix_SS(1,3)/15,25],...
+btnPCA = uibutton(fig,'Text','Run PCA','Position',[25,Height-1*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnPCA,event) pcaRUN,'Backgroundcolor',[0.5,1,0.5]);
-btnPLS = uibutton(fig,'Text','Run PLS','Position',[25,Height-60,Pix_SS(1,3)/15,25],...
+btnPLS = uibutton(fig,'Text','Run PLS','Position',[25,Height-2*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnPLS,event) plsRUN,'Backgroundcolor',[0.5,1,0.5]);
-btnCLOSE = uibutton(fig,'Text','CLOSE','Position',[25,Height-390,Pix_SS(1,3)/15,25],...
+btnCLOSE = uibutton(fig,'Text','CLOSE','Position',[25,Height-15*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnCLOSE,event) CLS,'Backgroundcolor',[1,0.7,0.7]);
-btnTRANSPOSE = uibutton(fig,'Text','Transpose Data','Position',[25,Height-230,Pix_SS(1,3)/15,25],...
+btnTRANSPOSE = uibutton(fig,'Text','Transpose Data','Position',[25,Height-9*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnTRANSPOSE,event) fctTRANSPOSE,'Backgroundcolor',[0.7,0.7,1]);
-btnOPEN = uibutton(fig,'Text','OPEN','Position',[25,Height-330,Pix_SS(1,3)/15,25],...
+btnOPEN = uibutton(fig,'Text','OPEN','Position',[25,Height-13*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnOPEN,event) pcaOPEN,'Backgroundcolor',[1,0.7,0.7]);
-btnSAVE = uibutton(fig,'Text','SAVE','Position',[25,Height-360,Pix_SS(1,3)/15,25],...
+btnSAVE = uibutton(fig,'Text','SAVE','Position',[25,Height-14*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnSAVE,event) pcaSAVE,'Backgroundcolor',[1,0.7,0.7]);
 lbl1 = uilabel(fig,'Text','Training/Test replicates',...
-    'Position',[25,Height-420,Pix_SS(1,3)/15,25]);
-Replicates = uieditfield(fig,'numeric','Position',[25,Height-440,Pix_SS(1,3)/15,25],...
+    'Position',[25,Height-16*Step+6,Pix_SS(1,3)/15,Step-6]);
+Replicates = uieditfield(fig,'numeric','Position',[25,Height-17*Step+6,Pix_SS(1,3)/30,Step-6],...
     'RoundFractionalValues','on','Value',output.variables(1),'ValueChangedFcn',@(Replicates,event) RepChange(Replicates,event));
-TestReplicates = uieditfield(fig,'numeric','Position',[25,Height-470,Pix_SS(1,3)/15,25],...
+TestReplicates = uieditfield(fig,'numeric','Position',[25,Height-18*Step+6,Pix_SS(1,3)/30,Step-6],...
     'RoundFractionalValues','on','Value',output.variables(4),'ValueChangedFcn',@(TestReplicates,event) TestRepChange(TestReplicates,event));
-btnRESET = uibutton(fig,'Text','Re-set Data','Position',[25,Height-260,Pix_SS(1,3)/15,25],...
+btnSplitReplicates = uibutton(fig,'Text',sprintf('Split/Comb \n dataset'),'Position',[25+Pix_SS(1,3)/30,Height-18*Step+6,Pix_SS(1,3)/30,2*Step-6],...
+    'ButtonPushedFcn', @(btnSplitReplicates,event) split,'Backgroundcolor',[1,1,1]);
+btnRESET = uibutton(fig,'Text','Re-set Data','Position',[25,Height-10*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnRESET,event) pcaRESET(boxSCALING),'Backgroundcolor',[0.7,0.7,1]);
-btnAUTOREDUCE = uibutton(fig,'Text','RFE/RFA','Position',[25,Height-555,Pix_SS(1,3)/15,25],...
+btnAUTOREDUCE = uibutton(fig,'Text','RFE/RFA','Position',[25,Height-21*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnAUTOREDUCE,event) autoREDUCE,'Backgroundcolor',[0.7,0.7,1]);
-btnOPTIMISE = uibutton(fig,'Text','Optimise test set','Position',[25,Height-615,Pix_SS(1,3)/15,25],...
+btnOPTIMISE = uibutton(fig,'Text','Optimise test set','Position',[25,Height-23*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnOPTIMISE,event) optimiseTT,'Backgroundcolor',[0.7,0.7,1]);
-btnREDUNDANT = uibutton(fig,'Text','Remove redundant','Position',[25,Height-585,Pix_SS(1,3)/15,25],...
+btnREDUNDANT = uibutton(fig,'Text','Remove redundant','Position',[25,Height-22*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnREDUNDANT,event) reduceRED,'Backgroundcolor',[0.7,0.7,1]);
-btnCLEARALL = uibutton(fig,'Text','CLEAR ALL','Position',[25,Height-725,Pix_SS(1,3)/15,25],...
+btnCLEARALL = uibutton(fig,'Text','CLEAR ALL','Position',[25,Height-27*Step+6,Pix_SS(1,3)/15,Step-6],...
     'ButtonPushedFcn', @(btnCLEARALL,event) clearALL,'Backgroundcolor',[0.5,0.5,0.5]);
 % Options to load for PCA only
 if output.variables(9)==0
     lbl2 = uilabel(fig,'Text','X-axis PC',...
-        'Position',[25,Height-135,Pix_SS(1,3)/15,25]);
-    PC1 = uieditfield(fig,'numeric','Position',[25,Height-155,Pix_SS(1,3)/15,25],...
+        'Position',[25,Height-5*Step+6,Pix_SS(1,3)/15,Step-6]);
+    PC1 = uieditfield(fig,'numeric','Position',[25,Height-6*Step+6,Pix_SS(1,3)/30,Step-6],...
         'RoundFractionalValues','on','Value',output.variables(2),'ValueChangedFcn',@(PC1,event) PC1Change(PC1,event));
     lbl3 = uilabel(fig,'Text','Y-axis PC',...
-        'Position',[25,Height-175,Pix_SS(1,3)/15,25]);
-    PC2 = uieditfield(fig,'numeric','Position',[25,Height-195,Pix_SS(1,3)/15,25],...
+        'Position',[25,Height-7*Step+6,Pix_SS(1,3)/15,Step-6]);
+    PC2 = uieditfield(fig,'numeric','Position',[25,Height-8*Step+6,Pix_SS(1,3)/30,Step-6],...
         'RoundFractionalValues','on','Value',output.variables(3),'ValueChangedFcn',@(PC2,event) PC2Change(PC2,event));
-    btn3D = uibutton(fig,'Text','Create 3D plot','Position',[25,Height-695,Pix_SS(1,3)/15,25],...
+    btn3D = uibutton(fig,'Text','Create 3D plot','Position',[25,Height-26*Step+6,Pix_SS(1,3)/15,Step-6],...
         'ButtonPushedFcn', @(btn3D,event) plot3D,'Backgroundcolor',[0.5,1,0.8]);
-    btnDEND = uibutton(fig,'Text','Dendrogram','Position',[25,Height-665,Pix_SS(1,3)/15,25],...
+    btnDEND = uibutton(fig,'Text','Clustering','Position',[25,Height-25*Step+6,Pix_SS(1,3)/15,Step-6],...
         'ButtonPushedFcn', @(btnSPCA,event) Dendrogram,'Backgroundcolor',[0.5,1,0.8]);
-    btnGRAPH = uibutton(fig,'Text','Refresh Graphs','Position',[25,Height-90,Pix_SS(1,3)/15,25],...
+    btnGRAPH = uibutton(fig,'Text','Refresh Graphs','Position',[25,Height-3*Step+6,Pix_SS(1,3)/15,Step-6],...
         'ButtonPushedFcn', @(btnGRAPH,event) pcaGRAPH,'Backgroundcolor',[0.5,1,0.5]);
-    boxOPTIMISE = uicheckbox(fig,...
-        'text','Collective Optimise','Value',box,...
-        'position',[25,Height-640,Pix_SS(1,3)/15,25],...
-        'Value',output.variables(5),...
-        'ValueChangedFcn',@(src,evt)oPT(evt));
-    btnREDUCE = uibutton(fig,'Text','Manual Reduce','Position',[25,Height-525,Pix_SS(1,3)/15,25],...
+    lbl3 = uilabel(fig,'Text','Confidence limit',...
+        'Position',[25,Height-24*Step+6,Pix_SS(1,3)/15,Step-6]);
+    CFLimit = uieditfield(fig,'numeric','Position',[120,Height-24*Step+6,Pix_SS(1,3)/50,20],...
+        'RoundFractionalValues','off','Value',output.variables(12),'ValueChangedFcn',@(CFLimit,event) CFChange(CFLimit,event));
+    btnREDUCE = uibutton(fig,'Text','Manual Reduce','Position',[25,Height-20*Step+6,Pix_SS(1,3)/15,Step-6],...
         'ButtonPushedFcn', @(btnREDUCE,event) pcaREDUCE(boxSCALING),'Backgroundcolor',[0.7,0.7,1]);
 else
     lbl2 = uilabel(fig,'Text','#Latent variables',...
-        'Position',[25,Height-135,Pix_SS(1,3)/15,25]);
-    PC1 = uieditfield(fig,'numeric','Position',[25,Height-155,Pix_SS(1,3)/15,25],...
+        'Position',[25,Height-5*Step+6,Pix_SS(1,3)/15,Step-6]);
+    PC1 = uieditfield(fig,'numeric','Position',[25,Height-6*Step+6,Pix_SS(1,3)/30,Step-6],...
         'RoundFractionalValues','on','Value',output.variables(2),'ValueChangedFcn',@(PC1,event) PC1Change(PC1,event));
     lbl3 = uilabel(fig,'Text','Total LVs',...
-        'Position',[25,Height-175,Pix_SS(1,3)/15,25]);
-    PC2 = uieditfield(fig,'numeric','Position',[25,Height-195,Pix_SS(1,3)/15,25],...
+        'Position',[25,Height-7*Step+6,Pix_SS(1,3)/15,Step-6]);
+    PC2 = uieditfield(fig,'numeric','Position',[25,Height-8*Step+6,Pix_SS(1,3)/30,Step-6],...
         'RoundFractionalValues','on','Value',output.variables(3),'ValueChangedFcn',@(PC2,event) PC2Change(PC2,event));
     boxLOG = uicheckbox(fig,...
         'text','log Y data','Value',box,...
-        'position',[25,Height-95,Pix_SS(1,3)/15,25],...
+        'position',[25,Height-3*Step+6,Pix_SS(1,3)/15,Step-6],...
         'Value',output.variables(10),...
         'ValueChangedFcn',@(src,evt)logDATA(evt));
-    btnLASSO = uibutton(fig,'Text','LASSO','Position',[25,Height-645,Pix_SS(1,3)/15,25],...
+    btnLASSO = uibutton(fig,'Text','LASSO','Position',[25,Height-24*Step+6,Pix_SS(1,3)/15,Step-6],...
         'ButtonPushedFcn', @(btn3D,event) LASSO,'Backgroundcolor',[0.7,0.7,1]);
+    btnVIP = uibutton(fig,'Text','VIP filter','Position',[25,Height-25*Step+6,Pix_SS(1,3)/15,Step-6],...
+        'ButtonPushedFcn', @(btnVIP,event) VIP,'Backgroundcolor',[0.7,0.7,1]);
+    btnSCORES = uibutton(fig,'Text','Scores plot','Position',[25,Height-26*Step+6,Pix_SS(1,3)/15,Step-6],...
+        'ButtonPushedFcn', @(btnSCORES,event) PLSscores,'Backgroundcolor',[0.7,0.7,1]);
+    if isfield(temp,'PLSlabel') == 1
+        AxisLabel = uieditfield(fig,'Position',[25,Height-20*Step+6,Pix_SS(1,3)/15,Step-6],...
+            'Value',temp.PLSlabel,'ValueChangedFcn',@(TestReplicates,event) PLSlabel(event));
+    else
+        AxisLabel = uieditfield(fig,'Position',[25,Height-20*Step+6,Pix_SS(1,3)/15,Step-6],...
+            'ValueChangedFcn',@(TestReplicates,event) PLSlabel(event));
+    end
+    lbl4 = uilabel(fig,'Text','Axis label',...
+        'Position',[ceil(Pix_SS(1,3)/15+50)/1.8,Height-20*Step+6+floor(Step/1.5),Pix_SS(1,3)/15,Step-6]);
 end
 clear Pix_SS
 end
@@ -138,9 +160,12 @@ end
 % Transposes test and training sets
 function fctTRANSPOSE
 
-global training test
+global training test xVALUES
 training=transpose(training);
 test=transpose(test);
+if size(xVALUES,1)>1
+    xVALUES=xVALUES';
+end
 
 end
 
@@ -213,14 +238,14 @@ if size(xVALUES,2)==0 || size(xVALUES,2)==size(training,2)
             output.variables(10)=0;
         end
         
-        if size(Ytraining,1)~=size(output.trainingDATA,1)-3
-            Ytraining=[];
-        end
+%         if size(Ytraining,1)~=size(output.trainingDATA,1)-3
+%             Ytraining=[];
+%         end
         if isfield(temp,'Ytraining')==0 && size(Ytraining,1)>0
             temp.Ytraining=Ytraining;
             temp.Ytest=Ytest;
         end
-        [residuals,RV,yfitPLS,TestfitPLS,r2,YTraining,YTest,PLSPctVar,Xloadings]=PLS;
+        [residuals,RV,yfitPLS,TestfitPLS,r2,YTraining,YTest,PLSPctVar,Xloadings,Yloadings,VIPvalues,Xscores,Yscores,Testscores,stats]=PLS;
         close all force
         UISetup(0)
         output.PLS.residuals = residuals;
@@ -231,17 +256,23 @@ if size(xVALUES,2)==0 || size(xVALUES,2)==size(training,2)
         output.PLS.measuredTEST=YTest;
         output.PLS.r2_SE=r2;
         output.PLS.Loadings=Xloadings;
+        output.PLS.YLoadings=Yloadings;
+        output.PLS.Scores=Xscores;
+        output.PLS.YScores=Yscores;
+        output.PLS.TScores=Testscores;
         output.PLS.Variance=PLSPctVar;
+        output.PLS.VIP = VIPvalues;
+        output.PLS.Stats=stats;
         if size(Ytraining,1)>0
             plsGRAPH(residuals,RV,yfitPLS,YTraining,YTest,TestfitPLS,r2,PLSPctVar)
         end
-    else
-        msgbox 'Please update xVALUES.'
     end
+else
+    msgbox 'Please update xVALUES.'
 end
 end
 
-%% Graphing funcitons
+%% Graphing functions
 % Produces graphs
 function pcaGRAPH
 
@@ -254,7 +285,7 @@ global training test output temp SampleNames ExtraData xVALUES Ytest Ytraining
 if size(training,1)>0 % Check to make sure training dataset exists
     if output.variables(9)==0 %toggle PCA/PLS
         % Graph variance
-        figure('Name','Variance explained','Position',[10+Pix_SS(1,3)/15+50,50+Pix_SS(1,4)/2,(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,Pix_SS(1,4)/2.7]);
+        figure('Name','Variance explained','Position',[output.variables(13)+output.variables(15),output.variables(14)+180+(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4-100]);
         hold on
         set(gca,'FontName','Calibri','FontSize',12);
         ScreeLimit = size(output.PCA.explained,1);
@@ -279,7 +310,7 @@ if size(training,1)>0 % Check to make sure training dataset exists
         
         % Graph PC loadings 1
         text=strcat('Loadings for PC',num2str(output.variables(1,2)));
-        figure('Name',text,'Position',[10+Pix_SS(1,3)/15+50,50,(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,Pix_SS(1,4)/2.7]);
+        figure('Name',text,'Position',[output.variables(13)+output.variables(15),output.variables(14)+180,(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4-100]);
         temp.PC1 = output.PCA.loadings(:,output.variables(1,2));
         if size(xVALUES,2)>0 && size(xVALUES,2)~=size(training,2) % Check if xVALUES arranged correctly
             xVALUES=transpose(xVALUES);
@@ -317,7 +348,7 @@ if size(training,1)>0 % Check to make sure training dataset exists
         
         % Graph PC loadings 2
         text=strcat('Loadings for PC',num2str(output.variables(1,3)));
-        figure('Name',text,'Position',[10+Pix_SS(1,3)/15+50+(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,50,(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,Pix_SS(1,4)/2.7]);
+        figure('Name',text,'Position',[output.variables(13)+output.variables(15)+(Pix_SS(1,3)-output.variables(15))/4,output.variables(14)+180,(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4-100]);
         temp.PC2 = output.PCA.loadings(:,output.variables(1,3));
         if size(xVALUES,2)==size(training,2)
             for a=1:size(output.trainingDATA,2)
@@ -342,14 +373,14 @@ if size(training,1)>0 % Check to make sure training dataset exists
         end
         ylabel(strcat('PC',num2str(output.variables(1,3)),' Loading'))
         box off
-        linkdata on
+        %linkdata on
         if output.variables(1,6)==1
             set(gcf, 'Color', 'None');
             set(gca, 'Color', 'None');
         end
         
-        % Scores plot
-        figure('Name','Scores plot','Position',[10+Pix_SS(1,3)/15+50+(Pix_SS(1,3)-10-Pix_SS(1,3)/15-50)/3,50+Pix_SS(1,4)/2,Pix_SS(1,4)/2.7+100,Pix_SS(1,4)/2.7]);
+        %% Scores plot
+        figure('Name','Scores plot','Position',[output.variables(13)+output.variables(15)+(Pix_SS(1,3)-output.variables(15))/4,output.variables(14)+180+(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4,(Pix_SS(1,3)-output.variables(15))/4-100]);
         hold on
         if output.variables(1,6)==1
             set(gcf, 'Color', 'None');
@@ -364,10 +395,14 @@ if size(training,1)>0 % Check to make sure training dataset exists
         
         % Find different colours for different datasets
         cs(1:datasets,3)=0;
-        for a =0: datasets-1
-            cs(a+1,1:3)=colourcalc(a,datasets-1,'Rainbow');
+        if datasets == 1
+            cs(1,1:3)=0;
+        else
+            for a =0: datasets-1
+                cs(a+1,1:3)=colourcalc(a,datasets-1,'Rainbow');
+            end
         end
-        if output.variables(1)==1
+        if output.variables(1)==0
             mks={'o'};
         else
             mks = {'o','^','d'};
@@ -387,10 +422,17 @@ if size(training,1)>0 % Check to make sure training dataset exists
         ylabel(text)
         
         % Add extradata to graph
-        if isfield(temp,'ExtraData')==1 && size(temp.ExtraData,2)==0 && size(ExtraData,2)>0
+        if isfield(temp,'ExtraData')==1 && size(temp.ExtraData,2)==0 && size(ExtraData,2)>0 || size(ExtraData,2)>0 && isfield(temp,'ExtraData')==0
             temp.ExtraData=ExtraData;
         end
         if isfield(temp,'ExtraData')==1 && size(temp.ExtraData,2)>0
+            % Check to ensure ExtraData size is correct
+            %if size(temp.ExtraData,2)~=size(output.trainingDATA,2)
+            temp.ExtraData=[];
+            for a=1:size(output.trainingDATA,2)
+                temp.ExtraData(:,a)=ExtraData(:,output.trainingDATA(1,a));
+            end
+            %end
             if output.variables(7)==1
                 scale=output.trainingDATA(3,:);
                 offset=output.trainingDATA(2,:);
@@ -405,16 +447,16 @@ if size(training,1)>0 % Check to make sure training dataset exists
                 offset =0;
             end
             PlotScores=((temp.ExtraData-offset)./scale-output.PCA.mu)*output.PCA.loadings;
-            x1=size(PlotScores,1);
-            for a=1:x1
-                scatter(PlotScores(a,output.variables(1,2)),PlotScores(a,output.variables(1,3)),...
-                    12,[1-a/x1,1-a/x1,1-a/x1],'x')
-            end
+            output.PCA.ExtraDataScores=PlotScores;
+            %x1=size(PlotScores,1); for a=1:x1
+            scatter(PlotScores(:,output.variables(1,2)),PlotScores(:,output.variables(1,3)),...
+                12,[0,0,0],'x')%[1-a/x1,1-a/x1,1-a/x1],'x')
+            %end
         end
         
         % Confidence Ellipses
         if reps>1
-            Ellipse = GetEllipses(data1,reps);
+            [Ellipse,~,output.variables(12)] = GetEllipses(data1,reps,output.variables(12));
             output.PCA.ConfidenceEllipses = Ellipse;
             for a=1:datasets
                 if isempty(find(output.omit==a))==1
@@ -425,12 +467,13 @@ if size(training,1)>0 % Check to make sure training dataset exists
         end
         
         % Adding test dataset to graph
-        if size(test,2)==size(training,2)&&output.variables(1,4)>0
+        if output.variables(1,4)>0
             reps = output.variables(1,4);
             output.PCA.TestScores=(output.testDATA-output.PCA.mu)*output.PCA.loadings;
             temp.TestScores = output.PCA.TestScores(:,output.variables(1,2));
             temp.TestScores(:,2)=output.PCA.TestScores(:,output.variables(1,3));
-            % XDataSource/YDataSource must be separately defined to allow linkdata
+            % XDataSource/YDataSource must be separately defined to allow
+            % linkdata
             for a=1:datasets
                 if isempty(find(output.omit==a))==1
                     scatter(temp.TestScores(1+(a-1)*reps:reps*a,1),...
@@ -505,7 +548,7 @@ if size(training,1)>0 % Check to make sure training dataset exists
                 
                 % Confidence Ellipses
                 if reps>1
-                    Ellipse = GetEllipses(data1,reps);
+                    Ellipse = GetEllipses(data1,reps,output.variables(12));
                     for a=1:datasets
                         
                         plot(Ellipse(:,1+2*(a-1)),Ellipse(:,2*a),...
@@ -515,11 +558,12 @@ if size(training,1)>0 % Check to make sure training dataset exists
                 end
                 
                 % Adding test dataset to graph
-                if size(test,2)==size(training,2)&&output.variables(1,4)>0
+                if size(output.testDATA,2)==size(training,2)&&output.variables(1,4)>0
                     reps = output.variables(1,4);
                     temp.TestScores = output.PCA.TestScores(:,1+2*(b-1));
                     temp.TestScores(:,2)=output.PCA.TestScores(:,2*b);
-                    % XDataSource/YDataSource must be separately defined to allow linkdata
+                    % XDataSource/YDataSource must be separately defined to
+                    % allow linkdata
                     for a=1:datasets
                         
                         scatter(temp.TestScores(1+(a-1)*reps:reps*a,1),...
@@ -556,13 +600,64 @@ end
 
 % Produce dendrogram
 function Dendrogram
-global output
+global output ExtraData
 if size(output.PCA.loadings,2)==0
     pcaDATASET
     pcaRUN
 end
-dendrogram_plot
+Pix_SS = get(0,'screensize'); %Get screen dimensions
+fig1 = uifigure('units','pixels','Position',[Pix_SS(1,3)/4,Pix_SS(1,4)/3,190,410]);
+if size(output.PCA.latent,1)<20
+    b = size(output.PCA.latent,1);
+else
+    b= 20;
 end
+for a =1:b
+    uicheckbox(fig1,'Text',strcat('PC',num2str(a)),'Position',[10 410-20*a 102 15]);
+end
+if isfield(output.PCA,'TestScores')==1
+    uibutton(fig1,'Text','Dendrogram','Position',[90,220,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) dendrogram_plot(fig1.Children,output.variables,output.PCA.scores,output.PCA.TestScores,...
+        ExtraData));
+    uibutton(fig1,'Text','HCA','Position',[90,160,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) dendrogramASSIGN(fig1.Children,output.variables,output.PCA.scores,output.PCA.TestScores)); %HCA = hierarchcial cluster analysis
+    uibutton(fig1,'Text','Ellipse','Position',[90,130,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) ellipseASSIGN(fig1.Children,output.variables,output.PCA.scores,output.PCA.TestScores));
+    uibutton(fig1,'Text','Random Forest','Position',[90,100,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) RandomForestSetup);
+    uicheckbox(fig1,'Text','Include Extra Data?','Position',[60,190,200,25]); %Checkbox for Extra data, will be PCS 1
+else
+    uibutton(fig1,'Text','Dendrogram','Position',[90,220,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) dendrogram_plot(fig1.Children,output.variables,output.PCA.scores,[],...
+        ExtraData));
+    uibutton(fig1,'Text','HCA','Position',[90,160,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) dendrogramASSIGN(fig1.Children,output.variables,output.PCA.scores,[])); %HCA = hierarchcial cluster analysis
+    uibutton(fig1,'Text','Ellipse','Position',[90,130,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) ellipseASSIGN(fig1.Children,output.variables,output.PCA.scores,[]));
+    uibutton(fig1,'Text','Random Forest','Position',[90,100,70,25],'ButtonPushedFcn', ...
+        @(btnPCA,event) RandomForestSetup);
+    uicheckbox(fig1,'Text','Include Extra Data?','Position',[60,190,200,25]); %Checkbox for Extra data, will be PCS 1
+end
+end
+
+% Random Forest Setup
+function RandomForestSetup
+global output
+if isfield(output,'RF')==1 && isfield(output.RF,'errorLOG') ==1
+    iReply = inputdlg({'Trees','Variables'},'If blank code will optimise', [1 60],{num2str(output.RF.trees) num2str(output.RF.variables)});
+else
+    iReply = inputdlg({'Trees','Variables'},'If blank code will optimise', [1 60]);
+end
+if isempty(iReply) == 0
+    if size(iReply{1},2)>0 %What to do if trees and variables entered
+        RandomForest(100,500,100,500,str2double(iReply{1}),str2double(iReply{2}))
+    else
+        iReply2 = inputdlg({'Min Trees','Max Trees','Min Variables','Max Variables'},'Enter limits', [1 30],{'20' '1000' num2str(ceil(sqrt(size(output.trainingDATA,2))/2)) num2str(ceil(size(output.trainingDATA,2)/2))});
+        RandomForest(str2double(iReply2{1}),str2double(iReply2{2}),str2double(iReply2{3}),str2double(iReply2{4}))
+    end
+end
+end
+
 
 % Produce 3D plot
 function plot3D
@@ -656,7 +751,7 @@ uibutton(fig1,'Text','Accept','Position',[60,220,50,25],'ButtonPushedFcn', @(btn
                     data2(:,2)=data1(:,3);
                     data2(:,3)=data1(:,2);
                 end
-                Ellipse = GetEllipses(data2(:,1:2),reps);
+                Ellipse = GetEllipses(data2(:,1:2),reps,output.variables(12));
                 for a=1:datasets
                     if isempty(find(output.omit==a))==1
                         if b==1
@@ -685,7 +780,8 @@ uibutton(fig1,'Text','Accept','Position',[60,220,50,25],'ButtonPushedFcn', @(btn
             temp.TestScores = output.PCA.TestScores(:,pcs(1));
             temp.TestScores(:,2)=output.PCA.TestScores(:,pcs(2));
             temp.TestScores(:,3)=output.PCA.TestScores(:,pcs(3));
-            % XDataSource/YDataSource must be separately defined to allow linkdata
+            % XDataSource/YDataSource must be separately defined to allow
+            % linkdata
             for a=1:datasets
                 if isempty(find(output.omit==a))==1
                     scatter3(temp.TestScores(1+(a-1)*reps:reps*a,1),...
@@ -724,6 +820,21 @@ uibutton(fig1,'Text','Accept','Position',[60,220,50,25],'ButtonPushedFcn', @(btn
             end
         end
     end
+end
+
+% Scores plot for PLS
+function PLSscores
+global output SampleNames ExtraData
+Pix_SS = get(0,'screensize'); %Get screen dimensions
+fig1 = uifigure('units','pixels','Position',[Pix_SS(1,3)/4,Pix_SS(1,4)/3,150,410]);
+for a =1:output.variables(2)
+    uicheckbox(fig1,'Text',strcat('PC',num2str(a)),'Position',[10 410-20*a 102 15],'Value',1);
+end
+uibutton(fig1,'Text','Graph MD predict','Position',[60,250,90,25],'ButtonPushedFcn', @(btnPCA,event) plsSCORES(output.PLS.predictTRAINING,fig1.Children,SampleNames,1));
+uibutton(fig1,'Text','Graph','Position',[60,220,50,25],'ButtonPushedFcn', @(btnPCA,event) plsSCORES(output.PLS.Scores,fig1.Children,SampleNames,2));
+uibutton(fig1,'Text','Dendrogram','Position',[60,190,90,25],'ButtonPushedFcn', @(btnPCA,event)...
+    dendrogram_plot(fig1.Children,output.variables,output.PLS.Scores,output.PLS.TScores,ExtraData));
+uicheckbox(fig1,'Text','Extra Data?','Position',[60,160,200,25]); %Checkbox for Extra data, will be PCS 1
 end
 %% Miscellaneous functions
 % Implements changes to replicate number, PCs to graph
@@ -772,6 +883,7 @@ else
     msgbox 'Error: PC number is more than the total number of PCs'
 end
 end
+
 function PC2Change(PC2,event)
 
 global output
@@ -781,6 +893,18 @@ else
     %output.variables(1,3)=event.Value;
     msgbox 'Error: PC number is more than the total number of PCs'
 end
+end
+
+function PLSlabel(event)
+global temp
+temp.PLSlabel=event.Value;
+end
+
+function CFChange(CF,event)
+
+global output
+output.variables(12)=CF.Value;
+
 end
 
 % Saves test, training and output variables into user defined file
@@ -918,7 +1042,7 @@ if strcmp(answer,'Yes')==1
         end
     else % If PCA
         Pix_SS = get(0,'screensize'); %Get screen dimensions
-        fig1 = uifigure('units','pixels','Position',[Pix_SS(1,3)/4,Pix_SS(1,4)/3,50,410]);
+        fig1 = uifigure('units','pixels','Position',[Pix_SS(1,3)/4,Pix_SS(1,4)/3,150,410]);
         a1=20;
         if size(output.PCA.latent,1)<20
             a1=size(output.PCA.latent,1);
@@ -926,54 +1050,98 @@ if strcmp(answer,'Yes')==1
         for a =1:a1
             uicheckbox(fig1,'Text',strcat('PC',num2str(a)),'Position',[10 410-20*a 102 15]);
         end
-        uibutton(fig1,'Text','Addition','Position',[60,220,50,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,1,a1));
-        uibutton(fig1,'Text','Elimination','Position',[60,250,50,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,0,a1));
+        uibutton(fig1,'Text','Addition','Position',[60,220,80,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,1,a1));
+        uibutton(fig1,'Text','Elimination','Position',[60,250,80,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,0,a1));
+        uibutton(fig1,'Text','A then E','Position',[60,190,80,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,2,a1));
+        uibutton(fig1,'Text','Looped','Position',[60,160,80,25],'ButtonPushedFcn', @(btnPCA,event) RUN(fig1.Children,3,a1));
     end
 else
-    RUN([])
+    RUN([],1)
 end
 XVariableNumbers = output.trainingDATA(1,:);
     function RUN(PCS,Type,PCmax)
+        
         if strcmp(answer,'Yes')==1
             pcs=[];
             for x1=1:PCmax
-                if PCS(PCmax+3-x1).Value==1
+                if PCS(PCmax+5-x1).Value==1
                     pcs(end+1)=x1;
                 end
             end
-            if Type==0
-                output.rOUTPUT=VariableOptimisation(output.trainingDATA(4:end,:),output.testDATA,output.variables(1,1),output.variables(1,4),pcs,output.variables(9));
+            if Type==0 % RFE
+                output.rOUTPUT=VariableOptimisation(output.trainingDATA(4:end,:),output.testDATA,output.variables(1,1),output.variables(1,4),pcs,output.variables(9),0);
                 output.rOUTPUT(2:end+1,:)=output.rOUTPUT;
                 output.rOUTPUT(1,1:end-1)=output.trainingDATA(1,:);
-            else
+            elseif Type == 1 % RFA
                 total = inputdlg('How many total variables do you wish to assess?');
                 if size(total,1)==0 % what happens with cancel
                     return
                 end
                 total=str2num(total{1});
-                output.rOUTPUT=RecursiveAddition(training,test,output.trainingDATA,output.testDATA,output.variables(1,1),output.variables(1,4),pcs,total);
+                output.rOUTPUT=RecursiveAddition(training,test,output.trainingDATA,output.testDATA,output.variables(1,1),output.variables(1,4),pcs,total,0);
                 output.rOUTPUT(2:end+1,:)=output.rOUTPUT;
                 output.rOUTPUT(1,1:end-1)=1:size(output.rOUTPUT,2)-1;
+            elseif Type == 2 % Addition then Elimination
+                total = inputdlg('How many total variables do you wish to assess?');
+                if size(total,1)==0 % what happens with cancel
+                    return
+                end
+                total=str2num(total{1});
+                output.rOUTPUT=RecursiveAddition(training,test,output.trainingDATA,output.testDATA,output.variables(1,1),output.variables(1,4),pcs,total,1);
+                output.rOUTPUT(2:end+1,:)=output.rOUTPUT;
+                output.rOUTPUT(1,1:end-1)=1:size(output.rOUTPUT,2)-1;
+                
+                % Apply RCA outputs
+                autoREDUCE_Implement(total)
+                if size(ExtraData,2)>0
+                    temp.ExtraData=[];
+                    for x2=1:size(output.trainingDATA,2)
+                        temp.ExtraData(:,x2)=ExtraData(:,output.trainingDATA(1,x2));
+                    end
+                end
+                output.trainingDATA(isnan(output.trainingDATA)==1)=0;
+                output.testDATA(isnan(output.testDATA)==1)=0;
+                if output.variables(9)==0
+                    pcaRUN
+                else
+                    plsRUN
+                end
+                % RFE
+                output.rOUTPUT=VariableOptimisation(output.trainingDATA(4:end,:),output.testDATA,output.variables(1,1),output.variables(1,4),pcs,output.variables(9),1);
+                output.rOUTPUT(2:end+1,:)=output.rOUTPUT;
+                output.rOUTPUT(1,1:end-1)=output.trainingDATA(1,:);
+            elseif Type == 3 % Addition then Elimination looped
+                prompt = {'Features to add','Minimum features','Loops'};
+                title = 'Input Loop Variables';
+                dims = [1 40];
+                definput = {'20','10','20'}; % default inputs
+                dims = inputdlg_track(prompt,title,dims,definput);
+                if size(dims,1)==0
+                    return
+                end
+                output.log=LoopRFA_RFE(pcs,str2num(dims{1}),str2num(dims{2}),str2num(dims{3}));
             end
             if size(output.rOUTPUT,2)==0 % error management
                 return
             end
-            output.rOUTPUT(1,end)=Type;
-            if output.variables(9)==0
+            if Type == 2
+                output.rOUTPUT(1,end)=0;
+            else
+                output.rOUTPUT(1,end)=Type;
+            end
+            if output.variables(9)==0 && Type < 2
                 close(fig1)
             end
         end
         
         temp.modifier = output.trainingDATA;
         temp.test = output.testDATA;
-        x1=1;
-        while x1 == 1
+        x3=1;
+        while x3 == 1 && Type ~= 3
             output.trainingDATA=temp.modifier;
             output.testDATA=temp.test;
-            %pcaDATASET
-            %m.Value=1;
-            %scaleSTD(m)
-            x1=2;
+            %pcaDATASET m.Value=1; scaleSTD(m)
+            x3=2;
             h=figure;
             grid on
             grid minor
@@ -982,17 +1150,21 @@ XVariableNumbers = output.trainingDATA(1,:);
             if output.rOUTPUT(1,end) == 0
                 xset=size(output.rOUTPUT,1)-xset+2;
             end
-            yyaxis left
+            %yyaxis left
             plot(xset,output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end))
-            if output.variables(9)==0
-                ylabel('Separation')
-                yyaxis right
-                if output.rOUTPUT(1,end) == 0
-                    plot(xset,output.rOUTPUT(end,1:size(xset,2)))
-                elseif output.variables(9)==0
+            if output.variables(9)==0 % Check it is PCA
+                ylabel('Separation') % Will always show separation
+                
+                if output.rOUTPUT(1,end) == 0 && max(output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end))<1
+                    %yyaxis right
+                    %plot(xset,output.rOUTPUT(end,1:size(xset,2)))
+                    ylabel('Mean area fraction not overlapping')
+                elseif output.rOUTPUT(1,end) == 1
+                    yyaxis right
                     plot(xset,output.rOUTPUT(end,size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+1:size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+size(xset,2)))
+                    ylabel('Mean area fraction not overlapping')
                 end
-                ylabel('Mean area fraction not overlapping')
+                
             else
                 ylabel('Coefficient of determination')
             end
@@ -1000,7 +1172,18 @@ XVariableNumbers = output.trainingDATA(1,:);
             xlabel('# variables')
             
             %ylabel('Separation')
-            x = inputdlg('How many variables do you wish to select?');
+            if output.variables(9)==0 && output.rOUTPUT(1,end) == 1
+                maxVAL = strcat('How many variables do you wish to select? Overlap Max=',...
+                    num2str(xset(find(output.rOUTPUT(end,size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+1:size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+size(xset,2))==max(output.rOUTPUT(end,size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+1:size(find(output.rOUTPUT(end-1,:)>0),2)-size(find(output.rOUTPUT(end,:)>0),2)+size(xset,2)))))),...
+                    ':Separation Max=',num2str(xset(find(output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end)==max(output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end))))));
+            else
+                maxVAL = strcat('How many variables do you wish to select? Max=',...
+                    num2str(xset(find(output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end)==max(output.rOUTPUT(2:end-2*output.rOUTPUT(1,end),end))))));
+            end
+            x = inputdlg(maxVAL);
+            if size(x,1)==0 % what happens with cancel
+                return
+            end
             x=str2num(x{1});
             close(h)
             autoREDUCE_Implement(x)
@@ -1010,6 +1193,8 @@ XVariableNumbers = output.trainingDATA(1,:);
                     temp.ExtraData(:,x2)=ExtraData(:,output.trainingDATA(1,x2));
                 end
             end
+            output.trainingDATA(isnan(output.trainingDATA)==1)=0;
+            output.testDATA(isnan(output.testDATA)==1)=0;
             if output.variables(9)==0
                 pcaRUN
             else
@@ -1017,7 +1202,7 @@ XVariableNumbers = output.trainingDATA(1,:);
             end
             answer = questdlg('Accept number of variables?');
             if strcmp(answer,'No')==1
-                x1=1;
+                x3=1;
             end
         end
         
@@ -1230,6 +1415,24 @@ while x1 == 1
 end
 end
 
+% Filter X variables based upon VIP value in PLS
+function VIP
+global output
+c2=0;
+for c1 = 1:size(output.trainingDATA,2)
+    if output.PLS.VIP(c1)>=1
+        c2=c2+1;
+        output.trainingDATA(:,c2)=output.trainingDATA(:,c1);
+        output.testDATA(:,c2)=output.testDATA(:,c1);
+    end
+end
+if c2 < c1
+    output.trainingDATA(:,c2+1:end)=[];
+    output.testDATA(:,c2+1:end)=[];
+end
+plsRUN
+end
+
 % Optimise the training and test sets
 function optimiseTT
 global output temp training
@@ -1248,7 +1451,13 @@ end
 if c1==1
     R1 = output.variables(1); % training set replicates
     R2 = output.variables(4); % test set replicates
-    if size(output.testDATA,1)==0 || output.variables(9)==1 && size(temp.Ytest,1)==0 || R2==1 && output.variables(9)==0
+    PC1 = output.variables(2); % PC of interest
+    PC2 = output.variables(3); % PC of interest
+    if output.variables(9)==1
+        PC1=1;
+        PC2=2;
+    end
+    if size(output.testDATA,1)==0 || R2==0 && output.variables(9)==0
         msgbox('Add test data and number of test replicates')
     else
         if isfield(output,'sampleNUMBERS')==0 % produce reference numbers so that the different samples being used can be tracked
@@ -1257,212 +1466,74 @@ if c1==1
         end
         
         datasets = floor((size(output.trainingDATA,1)-3)/R1);
-        training1 = [];
-        test = [];
-        CO=output.variables(5);
-        if R2>1
-            % Combine training and test sets
-            for x1=0:datasets-1
-                allDATA((R1+R2)*x1+1:(R1+R2)*x1+R1,:)=output.trainingDATA((R1)*x1+4:(R1)*x1+R1+3,:);
-                allDATA((R1+R2)*x1+R1+1:(R1+R2)*x1+R1+R2,:)=output.testDATA((R2)*x1+1:(R2)*x1+R2,:);
-                if output.variables(9)==1
-                    yDATA((R1+R2)*x1+1:(R1+R2)*x1+R1,1)=temp.Ytraining((R1)*x1+1:(R1)*x1+R1,1);
-                    yDATA((R1+R2)*x1+R1+1:(R1+R2)*x1+R1+R2,:)=temp.Ytest((R2)*x1+1:(R2)*x1+R2,:);
-                end
-            end
-            output.trainingDATA(4:end,:)=[];
-            output.testDATA=[];
+        CO=output.variables(5); % Collective optimisation
+        looper = 1;
+        testC1 = 0; % target number of test points outside ellipse
+        C2 = 0; % count of number of loops
+        % Extract training and test sets
+        
+        trainingDATA=output.trainingDATA(4:end,:);
+        testDATA=output.testDATA;
+        while looper == 1 % loop for collective optimisation
+            C1 = 0; % count number of test points outside ellipse
+            C2 = C2 + 1;
             for x1=1:datasets
-                subDATA=allDATA((R1+R2)*(x1-1)+1:(R1+R2)*(x1-1)+R1+R2,:);
-                if output.variables(9)==1
-                    subYDATA=yDATA((R1+R2)*(x1-1)+1:(R1+R2)*(x1-1)+R1+R2,1);
-                end
-                % Setup log of which numbers samples are used for training and test
-                output.sampleNUMBERS(3,1:R1)=output.sampleNUMBERS(1,1+R1*(x1-1):R1*x1);
-                output.sampleNUMBERS(3,R1+1:R1+R2)=output.sampleNUMBERS(2,1+R2*(x1-1):R2*x1);
+                %x1
+                % Run PCA
+                [coeff,score,latent,tsquared,explained,mu] = pca(trainingDATA);
+                TestScores=(testDATA-mu)*coeff;
                 
-                % Sequentially select each sample for testsets
-                table2(1)=1;
-                for x3=2:R2
-                    table2(x3)=table2(x3-1)+1;
-                end
-                for x3 = 1:factorial(R1+R2)/(factorial(R1)*factorial(R2)) % Select other samples for test set
-                    % Implement set
-                    test=[];
-                    if output.variables(9)==1
-                        YTrain=[];
-                        YTest=[];
+                % Identify test points that need exchanging
+                [M1,M2]=GetEllipses([score(1+R1*(x1-1):R1*x1,PC1),score(1+R1*(x1-1):R1*x1,PC2)],...
+                    R1,output.variables(12),[TestScores(1+R2*(x1-1):R2*x1,PC1),TestScores(1+R2*(x1-1):R2*x1,PC2)],R2);
+                
+                % Randomly shuffle training and test sets
+                if size(find(M2==0),2)>0
+                    C1 = C1 + size(find(M2==0),2);
+                    out = find(M2==0);
+                    if size(out,2)>R1/2
+                        out1 = randperm(size(out,2));
+                        out1=out1(1:R1/2)';
+                        out1=sortrows(out1)';
+                        for x3 = 1:R1/2
+                            out(x3)=out(out1(x3));
+                        end
+                        out(R1/2+1:end)=[];
                     end
-                    for x4=1:R2
-                        test(x4,:)=subDATA(table2(x4),:);
-                        output.sampleNUMBERS(4,R1+x4)=output.sampleNUMBERS(3,table2(x4));
-                        if output.variables(9)==1
-                            YTest(x4,1)=subYDATA(table2(x4),1);
-                        end
-                    end
-                    training1=[];
-                    for x4=1:R1+R2
-                        if length(find(table2==x4))==0
-                            training1(end+1,:)=subDATA(x4,:);
-                            output.sampleNUMBERS(4,size(training1,1))=output.sampleNUMBERS(3,x4);
-                            if output.variables(9)==1
-                                YTrain(end+1,1)=subYDATA(x4,1);
-                            end
-                        end
-                    end
-                    if CO == 1 || output.variables(9)==1 % Apply full dataset if required
-                        if x1==1
-                            training1(end+1:end+(R1+R2)*(datasets-1),:)=allDATA(R1+R2+1:end,:);
-                            if output.variables(9)==1
-                                YTrain(end+1:end+(R1+R2)*(datasets-1),1)=yDATA(R1+R2+1:end,1);
-                            end
-                        elseif x1==datasets
-                            training1(end+1:end+(R1+R2)*(datasets-1),:)=allDATA(1:end-R1-R2,:);
-                            if output.variables(9)==1
-                                YTrain(end+1:end+(R1+R2)*(datasets-1),1)=yDATA(1:end-R1-R2,1);
-                            end
-                        else
-                            training1(end+1:end+(R1+R2)*(x1-1),:)=allDATA(1:(R1+R2)*(x1-1),:);
-                            training1(end+1:end+(R1+R2)*(datasets-x1),:)=allDATA((R1+R2)*x1+1:end,:);
-                            if output.variables(9)==1
-                                YTrain(end+1:end+(R1+R2)*(x1-1),:)=yDATA(1:(R1+R2)*(x1-1),:);
-                                YTrain(end+1:end+(R1+R2)*(datasets-x1),:)=yDATA((R1+R2)*x1+1:end,:);
-                            end
-                        end
-                    end
-                    if output.variables(9)==output.variables(9) % test conditions for PCA
-                        [coeff,score,latent,tsquared,explained,mu] = pca(training1);
-                        TestScores=(test-mu)*coeff;
-                        if output.variables(9)==0
-                            [M1,M2]=GetEllipses([score(1:R1,output.variables(2)),score(1:R1,output.variables(3))],...
-                                R1,[TestScores(:,output.variables(2)),TestScores(:,output.variables(3))],R2);
-                        else
-                            [M1,M2]=GetEllipses([score(1:R1,1),score(1:R1,2)],...
-                                R1,[TestScores(:,1),TestScores(:,2)],R2);
-                        end
-                        if sum(M2) == R2 || x3 == factorial(R1+R2)/factorial(R1)% End loop if good training/test set found
-                            break
-                        end
-                    else % test conditions for PLS
-                        % Check for invalid numbers
-                        if sum(isnan(YTest))>0 || sum(isinf(YTest))>0
-                            r2(x3,1:2)=-1000;
-                        else
-                            if sum(isnan(YTrain))>0 || sum(isinf(YTrain))>0
-                                x5=0;
-                                for x4=1:size(YTrain,1)
-                                    if isinf(YTrain(x4,1))==0 && isnan(YTrain(x4,1))==0
-                                        x5=x5+1;
-                                        YTrain(x5,1)=YTrain(x4,1);
-                                        training1(x5,:)=training1(x4,:);
-                                    end
-                                end
-                                YTrain(x5+1:end,:)=[];
-                                training1(x5+1:end,:)=[];
-                            end
-                            [Xloadings,Yloadings,Xscores,Yscores,betaPLS] = plsregress(training1,YTrain,output.variables(2));
-                            yfitPLS = [ones(size(training1,1),1) training1]*betaPLS;
-                            TestfitPLS = [ones(size(test,1),1) test(:,:)]*betaPLS;
-                            
-                            r2(x3,1)=1-sum((yfitPLS-YTrain(:,:)).^2)/sum((yfitPLS-mean(yfitPLS)).^2);
-                            r2(x3,2)=sum((TestfitPLS-YTest(:,:)).^2);
-                            r2(x3,3)=table2(1);
-                            r2(x3,4)=table2(2);
-                            r2(x3,5)=table2(3);
-                        end
-                    end
-                    table2(R2)=table2(R2)+1;
-                    for x4 = 1:R2-1
-                        if table2(R2+1-x4)>R1+R2+1-x4
-                            table2(R2-x4)=table2(R2-x4)+1;
-                            table2(R2+1-x4)=table2(R2-x4)+1;
-                        end
-                    end
-                    for x4 = 2:R2
-                        if table2(x4)>R1+x4
-                            table2(x4)=table2(x4-1)+1;
-                        end
+                    out1 = randperm(R1);
+                    for x3 = 1:size(out,2)%factorial(R1+R2)/(factorial(R1)*factorial(R2)) % Select other samples for test set
+                        %x3
+                        newtest=trainingDATA(out1(x3)+R1*(x1-1),:);
+                        trainingDATA(out1(x3)+R1*(x1-1),:)=testDATA(out(x3)+R2*(x1-1),:);
+                        testDATA(out(x3)+R2*(x1-1),:)=newtest;
+                        newtest=output.sampleNUMBERS(1,R1*(x1-1)+out1(x3));
+                        output.sampleNUMBERS(1,R1*(x1-1)+out1(x3))=output.sampleNUMBERS(2,R2*(x1-1)+out(x3));
+                        output.sampleNUMBERS(2,R2*(x1-1)+out(x3))=newtest;
                     end
                 end
-                if output.variables(9)==2 % find best option for PLS
-                    x3=find(r2(:,2)==min(r2(:,2)));
-                    if size(x3,1)>1 % Select first option if multiple mins exist
-                        x3=x3(1);
-                    end
-                    test=[];
-                    
-                    YTrain=[];
-                    YTest=[];
-                    
-                    for x4=1:R2
-                        test(x4,:)=subDATA(r2(x3,2+x4),:);
-                        output.sampleNUMBERS(4,R1+x4)=output.sampleNUMBERS(3,r2(x3,2+x4));
-                        YTest(x4,1)=subYDATA(r2(x3,2+x4),1);
-                    end
-                    training1=[];
-                    for x4=1:R1+R2
-                        if length(find(r2(x3,3:5)==x4))==0
-                            training1(end+1,:)=subDATA(x4,:);
-                            output.sampleNUMBERS(4,size(training1,1))=output.sampleNUMBERS(3,x4);
-                            YTrain(end+1,1)=subYDATA(x4,1);
-                        end
-                    end
-                    
-                    if x1==1
-                        training1(end+1:end+(R1+R2)*(datasets-1),:)=allDATA(R1+R2+1:end,:);
-                        YTrain(end+1:end+(R1+R2)*(datasets-1),1)=yDATA(R1+R2+1:end,1);
-                    elseif x1==datasets
-                        training1(end+1:end+(R1+R2)*(datasets-1),:)=allDATA(1:end-R1-R2,:);
-                        YTrain(end+1:end+(R1+R2)*(datasets-1),1)=yDATA(1:end-R1-R2,1);
-                    else
-                        training1(end+1:end+(R1+R2)*(x1-1),:)=allDATA(1:(R1+R2)*(x1-1),:);
-                        YTrain(end+1:end+(R1+R2)*(x1-1),:)=yDATA(1:(R1+R2)*(x1-1),:);
-                        YTrain(end+1:end+(R1+R2)*(datasets-x1),:)=yDATA((R1+R2)*x1+1:end,:);
-                    end
-                    
-                end
-                % What to do once found good training set
-                output.trainingDATA(end+1:end+R1,:)=training1(1:R1,:);
-                output.sampleNUMBERS(1,1+R1*(x1-1):R1*x1)=output.sampleNUMBERS(4,1:R1);
-                output.testDATA(end+1:end+R2,:)=test;
-                output.sampleNUMBERS(2,1+R2*(x1-1):R2*x1)=output.sampleNUMBERS(4,R1+1:R1+R2);
             end
-            % Rescale data
-            if output.variables(7)==1 || output.variables(8)==1
-                if output.variables(7)==1
-                    output.trainingDATA(4:end,:)=(output.trainingDATA(4:end,:)).*output.trainingDATA(3,:)+output.trainingDATA(2,:);
-                    output.testDATA=(output.testDATA).*output.trainingDATA(3,:)+output.trainingDATA(2,:);
-                end
-                if output.variables(8)==1
-                    output.trainingDATA(4:end,:)=output.trainingDATA(4:end,:).*output.trainingDATA(2,:).^0.5;
-                    output.testDATA=output.testDATA.*output.trainingDATA(2,:).^0.5;
-                end
-                output.trainingDATA(2,:)=mean(output.trainingDATA(4:end,:),1);
-                output.trainingDATA(3,:)=std(output.trainingDATA(4:end,:)-output.trainingDATA(2,:),[],1);
-                if output.variables(7)==1
-                    output.trainingDATA(4:end,:)=(output.trainingDATA(4:end,:)-output.trainingDATA(2,:))./output.trainingDATA(3,:);
-                    output.testDATA=(output.testDATA-output.trainingDATA(2,:))./output.trainingDATA(3,:);
-                end
-                if output.variables(8)==1
-                    output.trainingDATA(4:end,:)=output.trainingDATA(4:end,:)./output.trainingDATA(2,:).^0.5;
-                    output.testDATA=output.testDATA./output.trainingDATA(2,:).^0.5;
-                end
-            else
-                output.trainingDATA(2,:)=mean(output.trainingDATA(4:end,:),1);
-                output.trainingDATA(3,:)=std(output.trainingDATA(4:end,:)-output.trainingDATA(2,:),[],1);
+            
+            % Conditions to stop collective optimisation loop
+            if CO == 0 || C1 == testC1
+                looper = 0;
             end
-            if output.variables(9)==0
-                pcaRUN
-            else
-                plsRUN
+            testC1 = C1;
+            if mod(C2,100)==0
+                answer = questdlg('Optimal test set not yet found. Continue?', ...
+                    'Circuit breaker');
+                if strcmp(answer,'Yes')==0
+                    looper = 0;
+                end
             end
-            output.sampleNUMBERS(3:end,:)=[];
-            if size(output.sampleNUMBERS,2)>datasets*R1
-                output.sampleNUMBERS(:,datasets*R1+1:end)=[];
-            end
-        elseif output.variables(9)==1
-            % what to do if PLS optimisation is occuring with no test data
-            msgbox('Split data into smaller datasets to enable test set optimisation')
+        end
+        
+        % Apply new training and test sets
+        output.trainingDATA(4:end,:)=trainingDATA;
+        output.testDATA=testDATA;
+        if output.variables(9)==0
+            pcaRUN
+        else
+            plsRUN
         end
     end
 end
@@ -1479,6 +1550,187 @@ function tBKG(evt)
 global output
 output.variables(1,6)=evt.Value;
 pcaGRAPH
+end
+
+% Split data into training/test
+function split(varargin)
+% Script to split or combine training and test sets Andrew Hook August 2024
+% Can use varargin to input new training and test set number
+
+
+%%SETUP
+global training test output temp Ytraining Ytest
+trainingN = output.variables(1);
+testN = output.variables(4);
+answer = 1;
+if testN == 0
+    splitYN = 1;
+    if length(varargin) ==0
+        prompt = {'New training size:','New test size:'};
+        dlgtitle = 'Input';
+        fieldsize = [1 45; 1 45];
+        definput = {num2str(ceil(trainingN/2)),num2str(floor(trainingN/2))};
+        answer = inputdlg(prompt,dlgtitle,fieldsize,definput);
+        if size(answer,1)>0
+            trainingN=str2double(answer{1});
+            testN=str2double(answer{2});
+        end
+    else
+        trainingN=varargin{1};
+        testN=varargin{2};
+    end
+else
+    splitYN = 0;
+end
+totalREPS = trainingN + testN;
+
+
+%% Readout variables
+temp1=temp;
+training1=training;
+output1 = output;
+test1=test;
+Ytraining1=Ytraining;
+Ytest1=Ytest;
+
+if size(answer,1)>0 % Manage cancel
+    reps = (size(output1.trainingDATA,1)-3)/totalREPS;
+    %% Run split
+    if splitYN == 1 % split training set into training and test
+        
+        % Split x data test
+        for a1= 1:reps
+            % whole set
+            test1(1+(a1-1)*testN:a1*testN,:)=training1(1+a1*totalREPS-testN:a1*totalREPS,:);
+            % spare set
+            output1.testDATA(1+(a1-1)*testN:a1*testN,:)=output1.trainingDATA(3+1+a1*totalREPS-testN:3+a1*totalREPS,:);
+            % sample numbers
+            output1.sampleNUMBERS(2,1+(a1-1)*testN:a1*testN)=output1.sampleNUMBERS(1,1+a1*totalREPS-testN:a1*totalREPS);
+        end
+        % training
+        for a1= 1:reps
+            % whole set
+            training1(1+(a1-1)*trainingN:trainingN*a1,:)=training1(1+(a1-1)*totalREPS:totalREPS*a1-testN,:);
+            % spare set
+            output1.trainingDATA(3+1+(a1-1)*trainingN:3+trainingN*a1,:)=output1.trainingDATA(3+1+(a1-1)*totalREPS:3+totalREPS*a1-testN,:);
+            % sample numbers
+            output1.sampleNUMBERS(1,1+(a1-1)*trainingN:trainingN*a1)=output1.sampleNUMBERS(1,1+(a1-1)*totalREPS:totalREPS*a1-testN);
+        end
+        training1(reps*trainingN+1:end,:)=[];
+        output1.trainingDATA(3+reps*trainingN+1:end,:)=[];
+        output1.sampleNUMBERS(:,max(testN,trainingN)*reps+1:end)=[];
+        % Split y data
+        if size(Ytraining1,1)>0
+            count1 = 0;
+            % test
+            for a1= 1:reps
+                % whole set
+                Ytest1(1+(a1-1)*testN:a1*testN,:)=Ytraining1(1+a1*totalREPS-testN:a1*totalREPS,:);
+                % spare set
+                try
+                    temp1.Ytest(1+(a1-1)*testN:a1*testN,:)=temp1.Ytraining(1+a1*totalREPS-testN:a1*totalREPS,:);
+                catch
+                    count1 = count1 +1;
+                end
+            end
+            % training
+            for a1= 1:reps
+                % whole set
+                Ytraining1(1+(a1-1)*trainingN:trainingN*a1,:)=Ytraining1(1+(a1-1)*totalREPS:totalREPS*a1-testN,:);
+                % spare set
+                try
+                    temp1.Ytraining(1+(a1-1)*trainingN:trainingN*a1,:)=temp1.Ytraining(1+(a1-1)*totalREPS:totalREPS*a1-testN,:);
+                catch
+                end
+            end
+            Ytraining1(reps*trainingN+1:end,:)=[];
+            temp1.Ytraining((reps-count1)*trainingN+1:end,:)=[];
+        end
+        output1.variables(1)=trainingN;
+        output1.variables(4)=testN;
+    else % integrate test set into training set        
+        reps = (size(output1.trainingDATA,1)-3)/trainingN;
+        hold1=training1;
+        hold2=output1.trainingDATA;
+        hold3=output1.sampleNUMBERS;
+        % Split x data training
+        for a1= 1:reps
+            % whole set
+            training1(1+(a1-1)*totalREPS:totalREPS*a1-testN,:)=hold1(1+(a1-1)*trainingN:trainingN*a1,:);
+            % spare set
+            output1.trainingDATA(3+1+(a1-1)*totalREPS:3+totalREPS*a1-testN,:)=hold2(3+1+(a1-1)*trainingN:3+trainingN*a1,:);
+            % sample numbers
+            output1.sampleNUMBERS(1,1+(a1-1)*totalREPS:totalREPS*a1-testN,:)=hold3(1,1+(a1-1)*trainingN:trainingN*a1,:);
+        end
+        % test
+        for a1= 1:reps
+            % whole set
+            training1(a1*totalREPS-testN+1:a1*totalREPS,:)=test1(1+(a1-1)*testN:a1*testN,:);
+            % spare set
+            output1.trainingDATA(3+a1*totalREPS-testN+1:3+a1*totalREPS,:)=output1.testDATA(1+(a1-1)*testN:a1*testN,:);
+            % sample numbers
+            output1.sampleNUMBERS(1,a1*totalREPS-testN+1:a1*totalREPS,:)=output1.sampleNUMBERS(2,1+(a1-1)*testN:a1*testN,:);
+        end
+        test1=[];
+        output1.testDATA=[];
+        output1.sampleNUMBERS(2,:)=0;
+        % Split y data
+        if size(Ytraining1,1)>0
+            hold1=Ytraining1;
+            if isfield(temp1,'Ytraining') == 1
+                hold2=temp1.Ytraining;
+            else
+                hold2=Ytraining1;
+                temp1.Ytest=Ytest;
+            end
+            % Split x data training
+            for a1= 1:reps
+                % whole set
+                Ytraining1(1+(a1-1)*totalREPS:totalREPS*a1-testN,:)=hold1(1+(a1-1)*trainingN:trainingN*a1,:);
+                % spare set
+                try
+                    temp1.Ytraining(1+(a1-1)*totalREPS:totalREPS*a1-testN,:)=hold2(1+(a1-1)*trainingN:trainingN*a1,:);
+                catch
+                end
+            end
+            % test
+            for a1= 1:reps
+                % whole set
+                Ytraining1(a1*totalREPS-testN+1:a1*totalREPS,:)=Ytest1(1+(a1-1)*testN:a1*testN,:);
+                % spare set
+                try
+                    temp1.Ytraining(a1*totalREPS-testN+1:a1*totalREPS,:)=temp1.Ytest(1+(a1-1)*testN:a1*testN,:);
+                catch
+                end
+            end
+            Ytest1=[];
+            temp1.Ytest=[];
+        end
+        output1.variables(1)=totalREPS;
+        output1.variables(4)=0;
+    end
+    
+    %% Readin variables
+    temp=temp1;
+    training=training1;
+    output = output1;
+    test=test1;
+    Ytraining=Ytraining1;
+    Ytest=Ytest1;
+    
+    %% Run PCA/PLS
+    
+    if output.variables(9) ==0
+        pcaRUN
+    else
+        if size(temp.Ytest,1)>0 % Don't run automatically if requires LOO method of cross-validation
+            plsRUN
+        end
+    end
+    
+    
+    
+end
 end
 
 %% Functions for reducing X-variables
@@ -1598,11 +1850,10 @@ global temp output training xVALUES
 if evt.Value == 1
     if size(xVALUES,2)==size(training,2)
         output.variables(11)=1;
-        % Get user input
-        % Select which PC to reduce data by
+        % Get user input Select which PC to reduce data by
         %Peak ranges. Add more ranges, will automatically update
-        % To add new range copy and paste the line from below to insert in or
-        % at the end of the list and update with new values
+        % To add new range copy and paste the line from below to insert in
+        % or at the end of the list and update with new values
         i=1;
         temp.oFILTER{1,i}.PeakRange='78.054 to 78.123';i=i+1;
         temp.oFILTER{1,i}.PeakRange='86.967 to 87.046';i=i+1;
@@ -1751,22 +2002,19 @@ pcaRUN
 end
 
 function reduceRED
-% function to sequentially remove most redundant variables from PCA
-% x = inputdlg('How many PCs do you wish to measure redundancy for?');
+% function to sequentially remove most redundant variables from PCA x =
+% inputdlg('How many PCs do you wish to measure redundancy for?');
 % x=str2num(x{1});
 global output temp
 % loop to measure redundancy of each
 a1=redundant(output.trainingDATA(4:end,:));
 logbook=max(a1);
 % for x1=1:size(output.PCA.loadings,1)
-%     logbook(x1,2)=max(max(a1));
-%     if logbook(x1,2)==0
+%     logbook(x1,2)=max(max(a1)); if logbook(x1,2)==0
 %         break
-%     end
-%     logbook(x1,1)=find(max(a1)==logbook(x1,2));
-% 	a1(:,logbook(x1,1))=0;
-% 	%logbook(x1,1:2)=a1;
-% 	%[output.PCA.loadings] = pca(output.trainingDATA(4:end,:));
+%     end logbook(x1,1)=find(max(a1)==logbook(x1,2));
+% 	a1(:,logbook(x1,1))=0; %logbook(x1,1:2)=a1; %[output.PCA.loadings] =
+% 	pca(output.trainingDATA(4:end,:));
 % end
 h=figure;
 bar(logbook)
@@ -1810,9 +2058,9 @@ if x>0
     end
 end
     function y = redundant(variables)
-        % function to identify most redundant variables
-        % variables should be in different columns
-        % will output r values comparing all variables to all other variables
+        % function to identify most redundant variables variables should be
+        % in different columns will output r values comparing all variables
+        % to all other variables
         for x2=1:size(variables,2)-1
             for x3=x2+1:size(variables,2)
                 r1=corrcoef(variables(:,x2),variables(:,x3));
@@ -1820,10 +2068,7 @@ end
             end
         end
         
-        %r2(r2==1)=0;
-        %p1=max(r2);
-        %y(1,1)=find(p1==max(p1));
-        %y(1,2)=max(p1);
+        %r2(r2==1)=0; p1=max(r2); y(1,1)=find(p1==max(p1)); y(1,2)=max(p1);
     end
 end
 
@@ -1852,12 +2097,14 @@ pcaDATASET
 a2=0;
 for a1=1:size(output.trainingDATA,2)
     
-    if size(output.testDATA,1)==0 && sum(isnan(output.trainingDATA(:,a1)))==0 || sum(isnan(output.trainingDATA(:,a1)))==0 && sum(isnan(output.testDATA(:,a1)))==0 && sum(output.testDATA(:,a1))>0
+    if size(output.testDATA,1)==0 && sum(isnan(output.trainingDATA(:,a1)))==0 || sum(isnan(output.trainingDATA(:,a1)))==0 && sum(isnan(output.testDATA(:,a1)))==0
         a2=a2+1;
         output.trainingDATA(:,a2)=output.trainingDATA(:,a1);
         if size(output.testDATA,1)>0
             output.testDATA(:,a2)=output.testDATA(:,a1);
         end
+    else
+        a2 = a2;
     end
 end
 if a2<a1
@@ -1890,6 +2137,8 @@ end
 function pcaDATASET
 global training test output XVariableNumbers Ytraining Ytest temp
 XVariableNumbers=[];
+training(isnan(training(:,:))==1)=0.001;
+test(isnan(test(:,:))==1)=0.001;
 for x1=1:size(training,2)
     XVariableNumbers(x1)=x1;
 end

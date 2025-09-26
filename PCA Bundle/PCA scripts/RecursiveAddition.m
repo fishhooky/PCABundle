@@ -1,4 +1,4 @@
-function output1 = RecursiveAddition(training,test,trainingSUB,testSUB,R1,R2,PCS,total)
+function output1 = RecursiveAddition(training,test,trainingSUB,testSUB,R1,R2,PCS,total,type)
 %% Creation of sparse variable set for PCA
 % Sequentially adds the number of X-variables within a dataset
 % Recursive feature addition
@@ -6,6 +6,9 @@ function output1 = RecursiveAddition(training,test,trainingSUB,testSUB,R1,R2,PCS
 % Sample order for training and test sets must be the same
 % Different samples in different rows
 % Different variables in different columns
+% type = 1 will run maximise separation
+% type = 0 will allow user to decide
+% type = 2 will run minimise separation
 % Andrew Hook March 2020
 
 %% Setup
@@ -45,6 +48,16 @@ if output.variables(7)==1
     end
 end
 
+PCSv=PCS;
+if rem(size(PCS,2),2)==1
+    PCSv(end+1)=PCSv(end)+1;
+end
+maxPC = max(PCS);
+if maxPC > size(data1,2)
+    maxPC = size(data1,2);
+end
+PCloop = size(PCS,2);
+
 % Set initial conditions
 if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))+sum(sum(isnan(training))==size(training,1))
     data1 = training(:,1:3);
@@ -62,22 +75,24 @@ end
 S1 = floor(size(data1,1)/R1); % Number of different sample sets
 output1=[];
 log1=[];
-if output.variables(9)==0 && R1 > 2
-    CF = listdlg('PromptString','Select cost function','SelectionMode','single','ListString',{'Maximise Separation','Minimise Overlap','Alternate'}); % select cost function method
-else
+if output.variables(9)==0 && R1 > 2 && type == 0
+    CF = listdlg('PromptString','Select cost function','SelectionMode','single','ListString',{'Maximise Separation','Minimise Overlap','Minimise % Overlap','Alternate','Minimise variance'}); % select cost function method
+elseif type == 1
     CF = 1;
+else
+    CF =3;
 end
 if size(CF,1)==0
     return
 end
 warning('off','stats:pca:ColRankDefX')
-if CF == 3
+if CF == 4
     period = inputdlg('Runs per cycle?','Period');
     period=str2num(period{1});
 else
     period=1;
 end
-if output.variables(9)==0 && CF ~=2
+if output.variables(9)==0 && CF ~=2 && CF ~= 3 && type == 0
     scaling = questdlg('PCs equally weighted?','Space type','Mahalanobis','Euclidean','Euclidean');
 else
     scaling = 'Euclidean';
@@ -85,6 +100,7 @@ end
 if length(scaling)==0 % Cancel selection
     return
 end
+
 % Orbi-filter
 if output.variables(11)==1
     fSET = []; % Variable with ranges of masses that need to be filtered
@@ -121,7 +137,12 @@ if output.variables(11)==1
     end
 end
 %% Optimise 3 starting variables based upon PCs 1 and 2 if no initial data added
-if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))+sum(sum(isnan(training))==size(training,1))
+PCloop = size(PCS,2);
+if PCloop > 2
+    PCloop = 2;
+end
+if size(training,2)<=size(trainingSUB,2)+sum(sum(training==0)==size(training,1))+sum(sum(isnan(training))==size(training,1))
+    data1(isnan(data1))=0;
     total = total-3;
     if total < 0
         total = 0;
@@ -133,12 +154,13 @@ if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))
             if size(find(log1==x2),2)==0 && size(find(training(:,x2)>0),1)>0
                 if x2>3
                     data1(:,x1)=training(:,x2);
+                    data1(isnan(data1))=0;
                     if R2>0
                         t(:,x1)=test(:,x2);
                     end
                 end
                 if output.variables(9)==0
-                    [coeff,score,latent,tsquared,explained,mu] = pca(data1);
+                    [coeff,score,latent,tsquared,explained,mu] = pca(data1,'NumComponents',2);
                     if R2>0
                         TestScores=(t-mu)*coeff;
                     end
@@ -196,12 +218,12 @@ if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))
                     % Calculate test score for optimisation
                     data4=[];
                     data4(1:S1,1:S1)=0;
-                    if CF==2 % calculation based upon minimising ellipse overlap, if not true will fine average separation of means
+                    if CF==2||CF==3 % calculation based upon minimising ellipse overlap, if not true will fine average separation of means
                         for x3=1:floor(2/2)
                             data4=[];
-                            data4(:,1)=score(:,1+(x3-1)*2);
-                            data4(:,2)=score(:,2+(x3-1)*2);
-                            Ellipse = GetEllipses(data4,R1); % find ellipses
+                            data4(:,1)=score(:,1);
+                            data4(:,2)=score(:,2);
+                            Ellipse = GetEllipses(data4,R1,output.variables(12)); % find ellipses
                             data5=[];
                             for x4=1:S1 %find max and min coordinates
                                 data5(1,x4)=max(Ellipse(:,1+(x4-1)*2)); %max X
@@ -282,10 +304,18 @@ if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))
                             %                     close(f1)
                             %                     close(f2)
                         end
+                    elseif CF == 5 % calculate average variance of each replicate set
+                        for x3 = 1:S1
+                            for x4 = 1:PCloop
+                                data4(x3,x4)=std(score(1+R1*(x3-1):R1*x3,x4));
+                            end
+                        end
+                        data3(2,1,1)=1/sum(sum(data4)); % need to invert so can maximise selection
+                        
                     else % measure average separation of means
                         for x3 = 1:S1
                             for x4 = 1:S1
-                                for x5 = 1:2
+                                for x5 = 1:PCloop
                                     data4(x3,x4)=data4(x3,x4)+abs(data3(1,x3,x5)-data3(1,x4,x5));
                                 end
                                 %data4(x3,x4)=data4(x3,x4)^0.5;
@@ -300,17 +330,17 @@ if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))
                     Yt=[];
                     t1=[];
                     for x3=1:size(data1,1)
-                        if isnan(temp.Ytraining(x3,1))==0 && isinf(temp.Ytraining(x3,1))==0 
+                        if isnan(temp.Ytraining(x3,1))==0 && isinf(temp.Ytraining(x3,1))==0
                             Ytrain(end+1,1)=temp.Ytraining(x3,1);
                             data3(end+1,:)=data1(x3,:);
                         end
                     end
                     for x3=1:size(t,1)
-                        if isnan(temp.Ytest(x3,1))==0 && isinf(temp.Ytest(x3,1))==0 
+                        if isnan(temp.Ytest(x3,1))==0 && isinf(temp.Ytest(x3,1))==0
                             Yt(end+1,1)=temp.Ytest(x3,1);
                             t1(end+1,:)=t(x3,:);
                         end
-                    end    
+                    end
                     %Do PLS
                     [Xloadings,Yloadings,Xscores,Yscores,betaPLS] = plsregress(data3,Ytrain,1);
                     yfitPLS = [ones(size(data3,1),1) data3]*betaPLS;
@@ -325,7 +355,7 @@ if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))
             t(:,x1)=test(:,data3(1));
         end
         log1(end+1)=data3(1);
-
+        
     end
 else
     if output.variables(9)==0
@@ -346,7 +376,7 @@ if R2>0 && output.variables(9)==0
     for x3 = 2 % loop for different PCS
         data4(:,2)=score(:,2);
         data5(:,2)=TestScores(:,2);
-        [M1,M2]=GetEllipses(data4,R1,data5,R2);
+        [M1,M2]=GetEllipses(data4,R1,output.variables(12),data5,R2);
         dataX(1+x3,1:S1)=transpose(R2-sum(M2,2)); % Add number of points outside confidence limit
     end
 end
@@ -354,7 +384,7 @@ end
 M2=[];data5=[];
 log1(2,1)=0;
 %% Loop for removing variables
-if size(training,2)==size(trainingSUB,2)+sum(sum(training==0)==size(training,1))+sum(sum(isnan(training))==size(training,1))
+if size(training,2)<=size(trainingSUB,2)+sum(sum(training==0)==size(training,1))+sum(sum(isnan(training))==size(training,1))
     if total>size(training,2)
         total=size(training,2)-3;
     end
@@ -364,6 +394,10 @@ else
     end
 end
 start=size(data1,2);
+PCloop = size(PCS,2);
+if total == 0
+    total = 1;
+end
 for x1 = 1:total
     x1
     for x2 = 1:size(training,2)
@@ -372,6 +406,7 @@ for x1 = 1:total
             
             % Sequentially select dataset with one more variable
             data1(:,start+x1)=training(:,x2);
+            data1(isnan(data1))=0;
             if R2>0
                 t(:,start+x1)=test(:,x2);
             end
@@ -409,8 +444,14 @@ for x1 = 1:total
             else
                 %Run PCA
                 maxPC = max(PCS);
-                if maxPC > size(data1,2)-1
+                PCloop = size(PCS,2);
+                if maxPC+1 > size(data1,2)
                     maxPC = size(data1,2)-1;
+                    PCloop = find(PCS==maxPC);
+                    if isempty(PCloop)==1
+                        msgbox 'Cannot use high latent variable with low principal components. First build model with a low number of prinipal components and add high principal components once variable set sufficiently large.'
+                        return
+                    end
                 end
                 [coeff,score,latent,tsquared,explained,mu] = pca(data1,'NumComponents',maxPC+1);
                 %Apply to test dataset
@@ -428,28 +469,25 @@ for x1 = 1:total
                     end
                     score=score./max(score);
                 end
-                PCloop = size(PCS,2);
-                if size(score,2)<PCloop
-                    PCloop = size(score,2);
-                end
                 
-                % Determine if test set within 95% confidence of training set
-                if R2>0
-                    data5=score(:,PCS(1));
-                    data6=TestScores(:,PCS(1));
-                    for x3=2:PCloop
-                        data5(:,2)=score(:,PCS(x3));
-                        data6(:,2)=TestScores(:,PCS(x3));
-                        [M1,M2(1:S1,1+(x3-2)*R2:R2*(x3-1))]=GetEllipses(data5,R1,data6,R2);
-                    end
-                    
-                    % Count number of test datapoints outside confidence limit
-                    for x3=1:PCloop-1
-                        M2(:,x3)=R2-sum(M2(:,1+R2*(x3-1):R2*x3),2);
-                    end
-                    M2(:,x3+1:end)=[];
-                    M2=transpose(M2); % Transform M2 to allow comparison with dataX
-                end
+                
+                %                 % Determine if test set within 95% confidence of training set
+                %                 if R2>0
+                %                     data5=score(:,PCS(1));
+                %                     data6=TestScores(:,PCS(1));
+                %                     for x3=2:PCloop
+                %                         data5(:,2)=score(:,PCS(x3));
+                %                         data6(:,2)=TestScores(:,PCS(x3));
+                %                         [M1,M2(1:S1,1+(x3-2)*R2:R2*(x3-1))]=GetEllipses(data5,R1,data6,R2);
+                %                     end
+                %
+                %                     % Count number of test datapoints outside confidence limit
+                %                     for x3=1:PCloop-1
+                %                         M2(:,x3)=R2-sum(M2(:,1+R2*(x3-1):R2*x3),2);
+                %                     end
+                %                     M2(:,x3+1:end)=[];
+                %                     M2=transpose(M2); % Transform M2 to allow comparison with dataX
+                %                 end
                 % Calculate average score for each sample for each PC
                 data3(3,S1,PCloop)=0;
                 data3(:,:)=0;
@@ -462,12 +500,24 @@ for x1 = 1:total
                 % Calculate test score for optimisation
                 data4=[];
                 data4(1:S1,1:S1)=0;
-                if CF == 2 && PCloop>1 && log1(2,end)~=1 || CF ==3 && PCloop>1 && oddeven(ceil(x1/period))==1% calculation based upon minimising ellipse overlap, if not true will fine average separation of means
-                    for x3=1:floor(PCloop/2)
+                if CF > 1 && CF < 4 && PCloop>1 && log1(2,end)~=1 || CF ==4 && PCloop>1 && oddeven(ceil(x1/period))==1% calculation based upon minimising ellipse overlap, if not true will fine average separation of means
+                    if PCloop == 3
+                        Eloop = 3;
+                    else
+                        Eloop = ceil(PCloop/2);
+                    end
+                    for x3=1:Eloop
                         data4=[];
-                        data4(:,1)=score(:,1+(x3-1)*2);
-                        data4(:,2)=score(:,2+(x3-1)*2);
-                        Ellipse = GetEllipses(data4,R1); % find ellipses
+                        if PCloop == 3
+                            d1=ceil(x3/2);
+                            d2=floor(x3/2)+2;
+                            data4(:,1)=score(:,PCSv(d1));
+                            data4(:,2)=score(:,PCSv(d2));
+                        else
+                            data4(:,1)=score(:,PCSv(1+(x3-1)*2));
+                            data4(:,2)=score(:,PCSv(2+(x3-1)*2));
+                        end
+                        Ellipse = GetEllipses(data4,R1,output.variables(12)); % find ellipses
                         data5=[];
                         for x4=1:S1 %find max and min coordinates
                             data5(1,x4)=max(Ellipse(:,1+(x4-1)*2)); %max X
@@ -516,38 +566,50 @@ for x1 = 1:total
                             end
                             %                         figure(f2);imshow(data5)
                         end
-                        for x4=1:S1 % mark pixel areas that overlap
-                            for x5=min(Ellipse(:,2*x4)):max(Ellipse(:,2*x4))
-                                data6=find(Ellipse(:,2*x4)==x5);
-                                minY=min(Ellipse(data6,1+(x4-1)*2));
-                                maxY=max(Ellipse(data6,1+(x4-1)*2));
-                                if x5 ~= min(Ellipse(:,2*x4)) && x5 ~= max(Ellipse(:,2*x4))
-                                    if size(data6,1)==0  %modify if cannot find maxY and minY points
-                                        minY=temp1(1);
-                                        maxY=temp1(2);
-                                    elseif minY==maxY
-                                        if abs(minY-temp1(1))>abs(minY-temp1(2))
+                        if CF == 3
+                            for x4=1:S1 % mark pixel areas that overlap
+                                for x5=min(Ellipse(:,2*x4)):max(Ellipse(:,2*x4))
+                                    data6=find(Ellipse(:,2*x4)==x5);
+                                    minY=min(Ellipse(data6,1+(x4-1)*2));
+                                    maxY=max(Ellipse(data6,1+(x4-1)*2));
+                                    if x5 ~= min(Ellipse(:,2*x4)) && x5 ~= max(Ellipse(:,2*x4))
+                                        if size(data6,1)==0  %modify if cannot find maxY and minY points
                                             minY=temp1(1);
-                                        else
                                             maxY=temp1(2);
+                                        elseif minY==maxY
+                                            if abs(minY-temp1(1))>abs(minY-temp1(2))
+                                                minY=temp1(1);
+                                            else
+                                                maxY=temp1(2);
+                                            end
+                                            
                                         end
-                                        
                                     end
+                                    areas(x4,2)=areas(x4,2)+size(find(data5(x5,minY:maxY)==1),2);
+                                    temp1(1)=minY;
+                                    temp1(2)=maxY;
                                 end
-                                areas(x4,2)=areas(x4,2)+size(find(data5(x5,minY:maxY)==1),2);
-                                temp1(1)=minY;
-                                temp1(2)=maxY;
                             end
+                            %                     areas(10,2)=areas(10,2)*5;% Bias sample 10
+                            %                     areas(1:3,2)=areas(1:3,2)*3;
+                            %                     areas(5,2)=areas(5,2)*3;
+                            %                     areas(7,2)=areas(7,2)*3;
+                            %data3(2,x3,1)=size(find(data5==1),1)/size(find(data5>1),1); % criteria minimise overlap of ellipses
+                            data3(2,x3,1)=mean(areas(:,2)./areas(:,1));% criteria minimise average % overlap of ellipses
+                            %                     close(f1)
+                            %                     close(f2)
+                        else
+                            data5=data5.^2;
+                            data3(2,x3,1)=1-(sum(data5(data5>1))).^0.5/sum(areas(:,1));
                         end
-                        %                     areas(10,2)=areas(10,2)*5;% Bias sample 10
-                        %                     areas(1:3,2)=areas(1:3,2)*3;
-                        %                     areas(5,2)=areas(5,2)*3;
-                        %                     areas(7,2)=areas(7,2)*3;
-                        %data3(2,x3,1)=size(find(data5==1),1)/size(find(data5>1),1); % criteria minimise overlap of ellipses
-                        data3(2,x3,1)=mean(areas(:,2)./areas(:,1));% criteria minimise average % overlap of ellipses
-                        %                     close(f1)
-                        %                     close(f2)
                     end
+                elseif CF == 5 % measure variance (standard deviation) of each dataset
+                    for x3 = 1:S1
+                        for x4 = 1:PCloop
+                            data4(x3,x4)=std(score(1+R1*(x3-1):R1*x3,PCS(x4)));
+                        end
+                    end
+                    data3(2,1,1)=1/sum(sum(data4)); % need to invert so can maximise selection
                 else % measure average separation of means
                     for x3 = 1:S1
                         for x4 = 1:S1
@@ -605,7 +667,7 @@ for x1 = 1:total
     
     % Log maximum value, maximum separation in output1 right column,
     % minimise overlap in 2nd row of log
-    if CF == 2 && PCloop>1 && log1(2,end-1)~=1 || CF ==3 && PCloop>1 && oddeven(ceil(x1/period))==1 || output.variables(9)==1% calculation based upon minimising ellipse overlap, if not true will fine average separation of means
+    if CF > 1 && CF < 4 && PCloop>1 && log1(2,end-1)~=1 || CF ==4 && PCloop>1 && oddeven(ceil(x1/period))==1 || output.variables(9)==1% calculation based upon minimising ellipse overlap, if not true will fine average separation of means
         log1(2,end)=max(output1(x1,:));
     else
         if x1==1
@@ -652,7 +714,7 @@ for x1 = 1:total
         % Calculate test score for optimisation
         data4=[];
         data4(1:S1,1:S1)=0;
-        if CF == 2 && log1(2,end-1)~=1 || CF == 3 && oddeven(ceil(x1/period))==1
+        if CF > 1 && CF < 4 && log1(2,end-1)~=1 || CF == 4 && oddeven(ceil(x1/period))==1
             for x3 = 1:S1
                 for x4 = 1:S1
                     for x5 = 1:PCloop
@@ -675,9 +737,9 @@ for x1 = 1:total
             end
             for x3=1:floor(PCloop1/2)
                 data4=[];
-                data4(:,1)=score(:,1+(x3-1)*2);
-                data4(:,2)=score(:,2+(x3-1)*2);
-                Ellipse = GetEllipses(data4,R1); % find ellipses
+                data4(:,1)=score(:,PCSv(1+(x3-1)*2));
+                data4(:,2)=score(:,PCSv(2+(x3-1)*2));
+                Ellipse = GetEllipses(data4,R1,output.variables(12)); % find ellipses
                 data5=[];
                 for x4=1:S1 %find max and min coordinates
                     data5(1,x4)=max(Ellipse(:,1+(x4-1)*2)); %max X

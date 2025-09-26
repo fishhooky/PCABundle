@@ -1,4 +1,4 @@
-function [r_ellipse,testOUTPUT]=error_ellipse(data,test)
+function [r_ellipse,testOUTPUT,CF]=error_ellipse(data,test,CF)
 %clearvars -except data data1;
 %close all;
 
@@ -40,13 +40,24 @@ end
 avg = mean(data);
 
 % Get the 95% confidence interval error ellipse
-chisquare_val = 2.4477;
+CFTable = [2.1459 90;2.4477 95;2.7162 97.5;2.7971 98;3.034 99;3.2553 99.5;3.5255 99.8;3.717 99.9];
+while size(find(CFTable(:,2)==CF),1)==0
+    CF = inputdlg('Confidence limit not found. Please enter different confidence limit value (e.g. 95).','Change confidence limit',[1 40],{'95'});
+    CF=str2num(CF{1});
+end
+chi_val = CFTable(find(CFTable(:,2)==CF),1); % Square root of chi squared 
+
+% 3.2553 for 99.5% confidence
+% 3.0348 for 99% confidence
+% 2.4477 for 95% confidence
+% 2.1459 for 90% confidence
+
 theta_grid = linspace(0,2*pi);
 phi = angle;
 X0=avg(1);
 Y0=avg(2);
-a=chisquare_val*sqrt(largest_eigenval);
-b=chisquare_val*sqrt(smallest_eigenval);
+a=chi_val*sqrt(largest_eigenval);
+b=chi_val*sqrt(smallest_eigenval);
 
 % the ellipse in x and y coordinates 
 ellipse_x_r  = a*cos( theta_grid );

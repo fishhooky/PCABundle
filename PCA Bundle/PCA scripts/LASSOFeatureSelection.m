@@ -44,7 +44,15 @@ function [minMSEModelPredictors,coefficients]=LASSOFeatureSelection(X,y,t)
     [B,FitInfo] = lassoglm(X,y,'gamma','CV',2, 'PredictorNames', t);
     
     % The features that provide the min square error are selected
-    idxLambdaMinMSE = FitInfo.IndexMinDeviance;
+    
+    if FitInfo.IndexMinDeviance == size(FitInfo.Intercept,2)
+        idxLambdaMinMSE = size(find(FitInfo.Deviance>1.01*FitInfo.Deviance(end)),2); % What to do when lambda equals 0
+    else
+        idxLambdaMinMSE = FitInfo.IndexMinDeviance;
+    end
+    if sum(B(:,idxLambdaMinMSE))==0
+        idxLambdaMinMSE = max(find(sum(B,1)~=0));
+    end
     minMSEModelPredictors = FitInfo.PredictorNames(B(:,idxLambdaMinMSE)~=0);
     coefficients=[];
     for x1 = 1:size(B,1)
@@ -56,6 +64,9 @@ function [minMSEModelPredictors,coefficients]=LASSOFeatureSelection(X,y,t)
     idxLambda1SE = FitInfo.Index1SE;
     sparseModelPredictors = FitInfo.PredictorNames(B(:,idxLambda1SE)~=0);
     
-    lassoPlot(B,FitInfo,'plottype','CV');
-    legend('show')
+    h=lassoPlot(B,FitInfo,'plottype','CV');
+    hold on
+    scatter(FitInfo.Lambda(1,idxLambdaMinMSE),FitInfo.Deviance(1,idxLambdaMinMSE),[],[0,0.5,0])
+    legend(h,'Deviance','Lambda Min SE','Lambda Min SECV')
+    
     
